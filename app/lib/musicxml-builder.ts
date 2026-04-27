@@ -2,6 +2,19 @@ import type { Note, Chord, Piece } from "./music-types";
 import { isChord } from "./music-types";
 
 // ============================================================
+// Timing/Debug Utilities
+// ============================================================
+
+function debugTime(label: string, startTime?: number): number {
+  const now = performance.now();
+  if (startTime !== undefined) {
+    const elapsed = now - startTime;
+    console.debug(`[TIMING] ${label}: ${elapsed.toFixed(2)}ms`);
+  }
+  return now;
+}
+
+// ============================================================
 // MusicXML Builder — Deterministic Stage 2
 // ============================================================
 
@@ -258,17 +271,24 @@ function buildMeasureXml(
 // ============================================================
 
 export function buildMusicXml(piece: Piece): string {
+  const overallStart = debugTime("buildMusicXml:start");
+
+  const measuresStart = debugTime("buildMusicXml:build measures start");
   const measures = piece.measures
     .map((m, i) =>
       buildMeasureXml(m, i === 0, piece.key, piece.mode, piece.timeSignature, piece.tempo)
     )
     .join("\n");
+  debugTime("buildMusicXml:build measures done", measuresStart);
 
+  const partContentStart = debugTime("buildMusicXml:build part content start");
   const partContent = `
 <part id="P1">
 ${indent(measures, 2)}
 </part>`;
+  debugTime("buildMusicXml:build part content done", partContentStart);
 
+  const scoreContentStart = debugTime("buildMusicXml:build score content start");
   const scoreContent = `
 <work>
   <work-title>Sight Reading Exercise</work-title>
@@ -287,11 +307,17 @@ ${indent(measures, 2)}
   </score-part>
 </part-list>
 ${partContent}`;
+  debugTime("buildMusicXml:build score content done", scoreContentStart);
 
-  return `<?xml version="1.0" encoding="UTF-8"?>
+  const finalXmlStart = debugTime("buildMusicXml:final assembly start");
+  const result = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE score-partwise PUBLIC "-//Recordare//DTD MusicXML 3.1 Partwise//EN"
   "http://www.musicxml.org/dtds/partwise.dtd">
 <score-partwise version="3.1">
 ${indent(scoreContent, 2)}
 </score-partwise>`;
+  debugTime("buildMusicXml:final assembly done", finalXmlStart);
+  debugTime("buildMusicXml:complete", overallStart);
+
+  return result;
 }

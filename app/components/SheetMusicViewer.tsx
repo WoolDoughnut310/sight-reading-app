@@ -5,6 +5,19 @@ interface SheetMusicViewerProps {
 }
 
 // ============================================================
+// Timing/Debug Utilities
+// ============================================================
+
+function debugTime(label: string, startTime?: number): number {
+  const now = performance.now();
+  if (startTime !== undefined) {
+    const elapsed = now - startTime;
+    console.debug(`[TIMING] ${label}: ${elapsed.toFixed(2)}ms`);
+  }
+  return now;
+}
+
+// ============================================================
 // SheetMusicViewer — renders MusicXML via OpenSheetMusicDisplay
 // ============================================================
 
@@ -22,15 +35,19 @@ export function SheetMusicViewer({ musicXml }: SheetMusicViewerProps) {
     setError(null);
 
     async function render() {
+      const overallStart = debugTime("SheetMusicViewer:render start");
       try {
+        const importStart = debugTime("SheetMusicViewer:OSMD import start");
         // Dynamically import OSMD (client-only, large bundle)
         const { OpenSheetMusicDisplay } = await import("opensheetmusicdisplay");
+        debugTime("SheetMusicViewer:OSMD import done", importStart);
 
         if (cancelled || !containerRef.current) return;
 
         // Clear previous render
         containerRef.current.innerHTML = "";
 
+        const createStart = debugTime("SheetMusicViewer:OSMD create start");
         // Create or reuse OSMD instance
         const osmd = new OpenSheetMusicDisplay(containerRef.current, {
           autoResize: true,
@@ -48,14 +65,21 @@ export function SheetMusicViewer({ musicXml }: SheetMusicViewerProps) {
           pageFormat: "Endless",
           pageBackgroundColor: "#ffffff",
         });
+        debugTime("SheetMusicViewer:OSMD create done", createStart);
 
         osmdRef.current = osmd;
 
+        const loadStart = debugTime("SheetMusicViewer:OSMD load start");
         await osmd.load(musicXml);
+        debugTime("SheetMusicViewer:OSMD load done", loadStart);
 
         if (cancelled) return;
 
+        const renderStart = debugTime("SheetMusicViewer:OSMD render start");
         osmd.render();
+        debugTime("SheetMusicViewer:OSMD render done", renderStart);
+        debugTime("SheetMusicViewer:render complete", overallStart);
+
         setLoading(false);
       } catch (err) {
         if (!cancelled) {

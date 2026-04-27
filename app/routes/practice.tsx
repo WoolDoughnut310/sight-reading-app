@@ -25,11 +25,27 @@ export async function loader(_: Route.LoaderArgs) {
 }
 
 // ============================================================
+// Timing/Debug Utilities
+// ============================================================
+
+function debugTime(label: string, startTime?: number): number {
+  const now = performance.now();
+  if (startTime !== undefined) {
+    const elapsed = now - startTime;
+    console.debug(`[TIMING] ${label}: ${elapsed.toFixed(2)}ms`);
+  }
+  return now;
+}
+
+// ============================================================
 // Action — generate music via LLM pipeline
 // ============================================================
 
 export async function action({ request }: Route.ActionArgs) {
+  const overallStart = debugTime("action:start");
+  const formDataStart = debugTime("action:formData parse start");
   const formData = await request.formData();
+  debugTime("action:formData parse done", formDataStart);
 
   const difficulty = (formData.get("difficulty") as DifficultyLevel) ?? "beginner";
   const style = (formData.get("style") as MusicStyle) ?? "classical";
@@ -47,8 +63,11 @@ export async function action({ request }: Route.ActionArgs) {
   };
 
   try {
+    const generateStart = debugTime("action:generateMusicPiece start");
     const { piece, musicXml } = await generateMusicPiece(settings);
+    debugTime("action:generateMusicPiece done", generateStart);
 
+    debugTime("action:complete", overallStart);
     return {
       success: true as const,
       musicXml,
@@ -63,6 +82,7 @@ export async function action({ request }: Route.ActionArgs) {
       error: null,
     };
   } catch (err) {
+    debugTime("action:error", overallStart);
     return {
       success: false as const,
       musicXml: null,

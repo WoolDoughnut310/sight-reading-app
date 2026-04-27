@@ -4,6 +4,19 @@ import { validatePiece } from "./music-validator";
 import { buildMusicXml } from "./musicxml-builder";
 
 // ============================================================
+// Timing/Debug Utilities
+// ============================================================
+
+function debugTime(label: string, startTime?: number): number {
+  const now = performance.now();
+  if (startTime !== undefined) {
+    const elapsed = now - startTime;
+    console.debug(`[TIMING] ${label}: ${elapsed.toFixed(2)}ms`);
+  }
+  return now;
+}
+
+// ============================================================
 // OpenAI client (server-only)
 // ============================================================
 
@@ -145,15 +158,20 @@ export async function generateMusicPiece(settings: PracticeSettings): Promise<{
   piece: Piece;
   musicXml: string;
 }> {
+  const overallStart = debugTime("generateMusicPiece:start");
   const client = getOpenAIClient();
+  const promptStart = debugTime("buildPrompt:start");
   const prompt = buildPrompt(settings);
+  debugTime("buildPrompt:done", promptStart);
 
   let lastErrors: string[] = [];
 
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    const attemptStart = debugTime(`Attempt ${attempt}:start`);
     try {
+      const llmStart = debugTime(`Attempt ${attempt}:LLM call start`);
       const response = await client.chat.completions.create({
-        model: "openai/gpt-4.1-mini",
+        model: "openai/gpt-4o-mini",
         messages: [
           {
             role: "system",
@@ -169,9 +187,10 @@ export async function generateMusicPiece(settings: PracticeSettings): Promise<{
           },
         ],
         temperature: 0.7,
-        max_tokens: 4000,
+        max_tokens: 1500,
         response_format: { type: "json_object" },
       });
+      debugTime(`Attempt ${attempt}:LLM call done`, llmStart);
 
       const rawText = response.choices[0]?.message?.content ?? "";
 
@@ -181,19 +200,27 @@ export async function generateMusicPiece(settings: PracticeSettings): Promise<{
       }
 
       // Parse JSON
+      const parseStart = debugTime(`Attempt ${attempt}:JSON parse start`);
       let parsed: unknown;
       try {
         parsed = JSON.parse(rawText);
+        debugTime(`Attempt ${attempt}:JSON parse done`, parseStart);
       } catch (e) {
         lastErrors = [`Invalid JSON: ${e instanceof Error ? e.message : String(e)}`];
         continue;
       }
 
       // Validate
+      const validateStart = debugTime(`Attempt ${attempt}:validation start`);
       const result = validatePiece(parsed);
+      debugTime(`Attempt ${attempt}:validation done`, validateStart);
 
       if (result.valid) {
+        const xmlStart = debugTime(`Attempt ${attempt}:MusicXML build start`);
         const musicXml = buildMusicXml(result.piece);
+        debugTime(`Attempt ${attempt}:MusicXML build done`, xmlStart);
+        debugTime(`Attempt ${attempt}:complete`, attemptStart);
+        debugTime("generateMusicPiece:complete", overallStart);
         return { piece: result.piece, musicXml };
       } else {
         lastErrors = result.errors;
