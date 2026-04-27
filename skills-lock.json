@@ -1,6 +1,11 @@
 {
   "version": 1,
   "skills": {
+    "openai-docs": {
+      "source": "openai/skills",
+      "sourceType": "github",
+      "computedHash": "3cd55b87709b4f34aa75c7b438bff1e3a9ace762d836314eb20d8a6d69c48d79"
+    },
     "react-router-framework-mode": {
       "source": "remix-run/agent-skills",
       "sourceType": "github",
