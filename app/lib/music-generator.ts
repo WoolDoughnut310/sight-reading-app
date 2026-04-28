@@ -86,11 +86,11 @@ STYLE: Chorale (Bach-style)
 META key=G mode=major time=4/4 tempo=80
 
 M1
-RH: C4:q D4:q E4:q G4:h
+RH: C4:q D4:q E4:q F4:q
 LH: [C3,E3,G3]:h [F3,A3,C4]:h
 
 M2
-RH: E4:q G4:q C5:h
+RH: E4:q G4:q C5:q D5:q
 LH: [A3,C4,E4]:h [G3,B3,D4]:h
 
 ## DSL FORMAT:
@@ -107,6 +107,7 @@ LH: <voice content>
 - Durations: w=whole(16 divisions), h=half(8 divisions), q=quarter(4 divisions), e=eighth(2 divisions), s=sixteenth(1 divisions)
 - Dotted (adds half the base): w.=24 divisions, h.=12 divisions, q.=6 divisions, e.=3 divisions, s.=1.5 divisions
 - In ${timeSignature} each measure must total exactly ${totalDivisions} divisions. Double-check your math before outputting.
+- EXAMPLE CHECK: C4:q D4:q E4:q F4:q = 4+4+4+4 = 16 divisions ✓
 
 ## CHORDS:
 [C4,E4,G4]:q
