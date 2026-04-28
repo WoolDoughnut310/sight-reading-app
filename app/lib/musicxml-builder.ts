@@ -86,14 +86,17 @@ function durationToType(divisions: number): string {
 // Pitch parsing
 // ============================================================
 
-function parsePitch(pitch: string): { step: string; alter: number; octave: number } {
-  const match = pitch.match(/^([A-G])([#b]?)(\d)$/);
+function parsePitch(pitch: string): { step: string; alter: number; octave: number; isRest: boolean } {
+  if (pitch === "R" || pitch === "REST") {
+    return { step: "R", alter: 0, octave: 0, isRest: true };
+  }
+  const match = pitch.match(/^([A-G])([#b]?)(\d+)$/);
   if (!match) {
-    return { step: "C", alter: 0, octave: 4 };
+    return { step: "C", alter: 0, octave: 4, isRest: false };
   }
   const [, step, accidental, octaveStr] = match;
   const alter = accidental === "#" ? 1 : accidental === "b" ? -1 : 0;
-  return { step, alter, octave: parseInt(octaveStr) };
+  return { step, alter, octave: parseInt(octaveStr), isRest: false };
 }
 
 // ============================================================
@@ -126,7 +129,7 @@ function buildNoteXml(
   staff: number,
   isChordNote: boolean = false
 ): string {
-  const { step, alter, octave } = parsePitch(note.pitch);
+  const parsed = parsePitch(note.pitch);
   const type = durationToType(note.duration);
 
   let xml = "";
@@ -135,26 +138,40 @@ function buildNoteXml(
     xml += "<chord/>\n";
   }
 
-  xml += "<pitch>\n";
-  xml += `  <step>${step}</step>\n`;
-  if (alter !== 0) {
-    xml += `  <alter>${alter}</alter>\n`;
+  if (parsed.isRest) {
+    xml += "<rest/>\n";
+  } else {
+    xml += "<pitch>\n";
+    xml += `  <step>${parsed.step}</step>\n`;
+    if (parsed.alter !== 0) {
+      xml += `  <alter>${parsed.alter}</alter>\n`;
+    }
+    xml += `  <octave>${parsed.octave}</octave>\n`;
+    xml += "</pitch>\n";
   }
-  xml += `  <octave>${octave}</octave>\n`;
-  xml += "</pitch>\n";
+
   xml += `<duration>${note.duration}</duration>\n`;
 
   if (note.tie === "start") {
-    xml += '<tie type="start"/>\n';
+    if (parsed.isRest) {
+      xml += '<tie type="start"/>\n';
+    } else {
+      xml += '<tie type="start"/>\n';
+    }
   } else if (note.tie === "stop") {
     xml += '<tie type="stop"/>\n';
   }
 
-  xml += `<voice>${voice}</voice>\n`;
-  xml += `<type>${type}</type>\n`;
-  xml += `<staff>${staff}</staff>\n`;
+  if (!parsed.isRest) {
+    xml += `<voice>${voice}</voice>\n`;
+    xml += `<type>${type}</type>\n`;
+    xml += `<staff>${staff}</staff>\n`;
+  } else {
+    xml += `<voice>${voice}</voice>\n`;
+    xml += `<type>${type}</type>\n`;
+    xml += `<staff>${staff}</staff>\n`;
+  }
 
-  // Notations
   const notations: string[] = [];
 
   if (note.tie === "start") {
@@ -177,7 +194,7 @@ function buildNoteXml(
     xml += `<notations>${notations.join("")}</notations>\n`;
   }
 
-  return tag("note", "\n" + indent(xml, 2));
+return tag("note", "\n" + indent(xml, 2));
 }
 
 // ============================================================

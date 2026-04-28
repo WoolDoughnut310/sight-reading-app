@@ -1,11 +1,7 @@
 import OpenAI from "openai";
 import type { Piece, PracticeSettings } from "./music-types";
-import { validatePiece } from "./music-validator";
+import { validateAndConvertDSL } from "./dsl-parser";
 import { buildMusicXml } from "./musicxml-builder";
-
-// ============================================================
-// Timing/Debug Utilities
-// ============================================================
 
 function debugTime(label: string, startTime?: number): number {
   const now = performance.now();
@@ -16,141 +12,127 @@ function debugTime(label: string, startTime?: number): number {
   return now;
 }
 
-// ============================================================
-// OpenAI client (server-only)
-// ============================================================
-
 function getOpenAIClient(): OpenAI {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
     throw new Error("OPENAI_API_KEY environment variable is not set");
   }
-  return new OpenAI({ apiKey });
+  return new OpenAI({ 
+    apiKey,
+    baseURL: process.env.OPENAI_BASE_URL || "https://api.openai.com/v1",
+  });
 }
-
-// ============================================================
-// Prompt builder
-// ============================================================
-
-const SCHEMA_DESCRIPTION = `
-{
-  "key": string,           // e.g. "C", "G", "F", "D", "Bb", "Eb"
-  "mode": "major" | "minor",
-  "timeSignature": string, // e.g. "4/4", "3/4"
-  "tempo": number,         // BPM, 60-160
-  "measures": [
-    {
-      "number": number,
-      "rightHand": [ Note | Chord ],
-      "leftHand":  [ Note | Chord ]
-    }
-  ]
-}
-
-Where:
-  Note  = { "pitch": string, "duration": number, "tie"?: "start"|"stop", "slur"?: "start"|"stop", "ornament"?: "trill"|"grace"|null }
-  Chord = { "notes": Note[] }
-
-Duration values (divisions, quarter = 4):
-  16 = whole note
-   8 = half note
-   4 = quarter note
-   2 = eighth note
-   1 = sixteenth note
-
-Pitch format: "C4", "F#3", "Bb5" (letter + optional accidental + octave number)
-`;
 
 function buildPrompt(settings: PracticeSettings): string {
   const { difficulty, style, tempo, measures } = settings;
+  const timeSignature = settings.timeSignature;
+  const beats = timeSignature.split("/")[0];
+  const beatType = timeSignature.split("/")[1];
+
+  const totalDivisions = parseInt(beats) * 4 * (4 / parseInt(beatType));
 
   const difficultyInstructions: Record<string, string> = {
     beginner: `
-- Use only white keys (C major or A minor)
-- Simple quarter and half note rhythms only
-- Stepwise motion in the right hand (no leaps larger than a 3rd)
-- Left hand: simple block chords (I, IV, V) on beats 1 and 3
-- No ornaments
-- Tempo: 60-80 BPM`,
+DIFFICULTY: BEGINNER
+- Key: C major or G major only (no sharps/flats)
+- RH: simple melody, stepwise motion only (no leaps)
+- LH: block chords on beats 1 and 3 (I, IV, V)
+- Note lengths: quarter (q) and half (h) notes only
+- No ornaments, no ties, no slurs
+- 4 measures only
+- Tempo: ${tempo} BPM`,
     intermediate: `
-- Use keys with 1-3 sharps or flats
-- Mix of quarter, eighth, and half notes
-- Right hand: melody with occasional 3rd and 5th leaps
-- Left hand: broken chord patterns (Alberti bass or arpeggios)
-- Occasional accidentals
-- 1-2 ornaments (trills) allowed
-- Tempo: 80-120 BPM`,
+DIFFICULTY: INTERMEDIATE
+- Key: up to 3 sharps or flats
+- RH: melody with some leaps (3rds, 5ths)
+- LH: Alberti bass or broken chords
+- Note lengths: include eighth (e) notes
+- Add 1-2 trill ornaments
+- Include dynamics: (mf), (f), (p)
+- 4 measures`,
     advanced: `
-- Use any key including flat/sharp keys
-- Complex rhythms: dotted notes, syncopation, sixteenth notes
-- Right hand: expressive melody with wide leaps, chromatic passing tones
-- Left hand: independent melodic or contrapuntal lines
-- Multiple ornaments (trills, grace notes)
-- Ties and slurs across barlines
-- Tempo: 100-160 BPM`,
+DIFFICULTY: ADVANCED
+- Key: any key
+- RH: expressive melody with chromaticism
+- LH: independent accompaniment patterns
+- Note lengths: sixteenth (s) notes OK
+- Add ornaments: (trill), (mordent)
+- Add ties: C4:q(tie-start) ... C4:q(tie-stop)
+- 4-8 measures`,
   };
 
   const styleInstructions: Record<string, string> = {
     classical: `
-Style: Classical/Romantic piano exercise
-- Use functional harmony: I-IV-V-I progressions
-- Clear phrase structure with cadences every 4 bars
-- Balanced, symmetrical phrases
-- Voice leading: smooth, minimal leaps in inner voices`,
+STYLE: Classical
+- Functional harmony: I - IV - V - I in each phrase
+- End with authentic cadence (V - I)
+- Balanced 4-bar phrases`,
     jazz: `
-Style: Jazz piano exercise
-- Use ii-V-I progressions
-- Include 7th chords in left hand (e.g., Dm7, G7, Cmaj7)
-- Syncopated rhythms in right hand
-- Blue notes and chromatic approaches allowed
-- Swing feel implied`,
+STYLE: Jazz
+- ii-V-I progressions
+- Left hand: 7th chords
+- Syncopated rhythms in RH
+- Blue notes allowed`,
     chorale: `
-Style: Bach-style chorale
-- Four-voice texture (SATB compressed to piano grand staff)
-- Right hand: soprano + alto voices
-- Left hand: tenor + bass voices
-- Strict voice leading: no parallel 5ths or octaves
-- Functional harmony with passing tones and suspensions`,
+STYLE: Chorale (Bach-style)
+- Four-voice texture
+- Strict voice leading
+- Use passing tones
+- No parallel 5ths/octaves`,
   };
 
-  const timeSignature = settings.timeSignature;
-  const divisionsPerMeasure = timeSignature === "3/4" ? 12 : 16;
+  return `You are a professional composer. Generate piano music using this DSL:
 
-  return `You are a professional composer and music theory expert.
+META key=G mode=major time=4/4 tempo=80
 
-Generate a piano sight-reading exercise as STRICT JSON only. No markdown, no prose, no code blocks.
+M1
+RH: C4:q D4:q E4:q G4:h
+LH: [C3,E3,G3]:h [F3,A3,C4]:h
 
-JSON Schema:
-${SCHEMA_DESCRIPTION}
+M2
+RH: E4:q G4:q C5:h
+LH: [A3,C4,E4]:h [G3,B3,D4]:h
 
-Requirements:
-- Exactly ${measures} measures
-- Time signature: ${timeSignature}
-- Each measure's rightHand durations MUST sum to exactly ${divisionsPerMeasure} divisions
-- Each measure's leftHand durations MUST sum to exactly ${divisionsPerMeasure} divisions
-- Right hand pitch range: C4 to C6 only
-- Left hand pitch range: C2 to C4 only
-- Tempo: ${tempo} BPM
+## DSL FORMAT:
 
-Difficulty level: ${difficulty}
+META key=<key> mode=<major|minor> time=<beats>/<beat> tempo=<bpm>
+
+M<n>
+RH: <voice content>
+LH: <voice content>
+
+## NOTES:
+- Pitch: C4, F#3, Bb2 (letter + optional #/b + octave)
+- Rest: R:q
+- Durations: w=whole(16 divisions), h=half(8 divisions), q=quarter(4 divisions), e=eighth(2 divisions), s=sixteenth(1 divisions)
+- Dotted (adds half the base): w.=24 divisions, h.=12 divisions, q.=6 divisions, e.=3 divisions, s.=1.5 divisions
+- In ${timeSignature} each measure must total exactly ${totalDivisions} divisions. Double-check your math before outputting.
+
+## CHORDS:
+[C4,E4,G4]:q
+
+## MODIFIERS (after duration):
+- (trill), (mordent), (turn)
+- (accent), (staccato), (tenuto)
+- (tie-start), (tie-stop)
+- (slur-start), (slur-stop)
+- (mf), (f), (p), (pp)
+
+## RULES:
+- ${measures} measures
+- Time: ${timeSignature} (= ${totalDivisions} divisions per measure)
+- RH range: C4 to C6
+- LH range: C2 to C4
+- Each measure RH and LH must total ${totalDivisions} divisions exactly
+- Must use functional harmony (I, IV, V, ii, vi, iii, vii°)
+- End with cadence (V→I or ii→V→I)
+
 ${difficultyInstructions[difficulty]}
-
 ${styleInstructions[style]}
 
-CRITICAL RULES:
-1. Return ONLY valid JSON — no text before or after
-2. Every measure must have BOTH rightHand and leftHand arrays
-3. Duration sums per measure must be EXACT (${divisionsPerMeasure} divisions for ${timeSignature})
-4. Use functional harmony — not random notes
-5. End with a clear cadence (V-I or ii-V-I)
-6. Chord objects must have a "notes" array; Note objects must have "pitch" and "duration"
+OUTPUT ONLY THE DSL - no explanations, no JSON, no markdown.`;
 
-Return ONLY the JSON object.`;
 }
-
-// ============================================================
-// LLM call with retry
-// ============================================================
 
 const MAX_RETRIES = 3;
 
@@ -160,6 +142,7 @@ export async function generateMusicPiece(settings: PracticeSettings): Promise<{
 }> {
   const overallStart = debugTime("generateMusicPiece:start");
   const client = getOpenAIClient();
+  
   const promptStart = debugTime("buildPrompt:start");
   const prompt = buildPrompt(settings);
   debugTime("buildPrompt:done", promptStart);
@@ -175,45 +158,35 @@ export async function generateMusicPiece(settings: PracticeSettings): Promise<{
         messages: [
           {
             role: "system",
-            content:
-              "You are a professional composer. You output ONLY valid JSON music data. Never output markdown, prose, or code blocks. Only output the raw JSON object.",
+            content: "You output ONLY the DSL music format. No JSON, no prose, no markdown code blocks. Only raw DSL.",
           },
           {
             role: "user",
-            content:
-              attempt === 1
-                ? prompt
-                : `${prompt}\n\nPrevious attempt failed validation with these errors:\n${lastErrors.join("\n")}\n\nPlease fix these issues and return valid JSON.`,
+            content: attempt === 1
+              ? prompt
+              : `${prompt}\n\nPrevious attempt failed validation:\n${lastErrors.join("\n")}\n\nFix these issues and return valid DSL.`,
           },
         ],
-        temperature: 0.7,
-        max_tokens: 1500,
-        response_format: { type: "json_object" },
+        temperature: 0.1
       });
       debugTime(`Attempt ${attempt}:LLM call done`, llmStart);
 
-      const rawText = response.choices[0]?.message?.content ?? "";
+      const rawText = response.choices[0]?.message?.content?.trim() ?? "";
 
       if (!rawText) {
         lastErrors = ["Empty response from LLM"];
         continue;
       }
-
-      // Parse JSON
-      const parseStart = debugTime(`Attempt ${attempt}:JSON parse start`);
-      let parsed: unknown;
-      try {
-        parsed = JSON.parse(rawText);
-        debugTime(`Attempt ${attempt}:JSON parse done`, parseStart);
-      } catch (e) {
-        lastErrors = [`Invalid JSON: ${e instanceof Error ? e.message : String(e)}`];
-        continue;
-      }
-
-      // Validate
-      const validateStart = debugTime(`Attempt ${attempt}:validation start`);
-      const result = validatePiece(parsed);
-      debugTime(`Attempt ${attempt}:validation done`, validateStart);
+      
+      const cleanDsl = rawText
+      .replace(/^```dsl\n?/g, "")
+      .replace(/^```\n?$/g, "")
+      .replace(/^```music\n?/g, "")
+      .trim();
+      
+      const parseStart = debugTime(`Attempt ${attempt}:DSL parse start`);
+      const result = validateAndConvertDSL(cleanDsl);
+      debugTime(`Attempt ${attempt}:DSL parse done`, parseStart);
 
       if (result.valid) {
         const xmlStart = debugTime(`Attempt ${attempt}:MusicXML build start`);
