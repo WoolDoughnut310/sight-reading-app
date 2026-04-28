@@ -1,24 +1,32 @@
 import { useNavigation } from "react-router";
-import type { DifficultyLevel, MusicStyle } from "~/lib/music-types";
+import type { AbrsmGrade, MusicStyle } from "~/lib/music-types";
 
 interface PracticeControlsProps {
-  defaultDifficulty?: DifficultyLevel;
+  defaultDifficulty?: AbrsmGrade;
   defaultStyle?: MusicStyle;
   defaultTempo?: number;
-  defaultMeasures?: number;
-  defaultTimeSignature?: "4/4" | "3/4";
 }
+
+const ABRSM_GRADES: { value: AbrsmGrade; label: string }[] = [
+  { value: "initial", label: "📖 Initial (4 bars, C major, 4/4)" },
+  { value: "grade1", label: "🌱 Grade 1 (4 bars, G/F majors, 4/4)" },
+  { value: "grade2", label: "🎵 Grade 2 (4 bars, D major, hands together)" },
+  { value: "grade3", label: "🎼 Grade 3 (8 bars, A/Bb/E majors, 3/8)" },
+  { value: "grade4", label: "🎹 Grade 4 (8 bars, 6/8, anacrusis)" },
+  { value: "grade5", label: "🎸 Grade 5 (8 bars, syncopation, E/A)" },
+  { value: "grade6", label: "🎻 Grade 6 (8 bars, triplets, 4/4)" },
+  { value: "grade7", label: "🎤 Grade 7 (8 bars, tempo changes, 4/4)" },
+  { value: "grade8", label: "⭐ Grade 8 (8 bars, ornaments, 4/4)" },
+];
 
 // ============================================================
 // PracticeControls — form for generating new exercises
 // ============================================================
 
 export function PracticeControls({
-  defaultDifficulty = "beginner",
+  defaultDifficulty = "grade1",
   defaultStyle = "classical",
   defaultTempo = 80,
-  defaultMeasures = 4,
-  defaultTimeSignature = "4/4",
 }: PracticeControlsProps) {
   const navigation = useNavigation();
   const isGenerating = navigation.state === "submitting";
@@ -31,10 +39,10 @@ export function PracticeControls({
       </h2>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
-        {/* Difficulty */}
+        {/* ABRSM Grade */}
         <div className="flex flex-col gap-1.5">
           <label htmlFor="difficulty" className="text-sm font-medium text-gray-600">
-            Difficulty
+            ABRSM Grade
           </label>
           <select
             id="difficulty"
@@ -42,9 +50,11 @@ export function PracticeControls({
             defaultValue={defaultDifficulty}
             className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent transition"
           >
-            <option value="beginner">🌱 Beginner</option>
-            <option value="intermediate">🎵 Intermediate</option>
-            <option value="advanced">🎼 Advanced</option>
+            {ABRSM_GRADES.map((grade) => (
+              <option key={grade.value} value={grade.value}>
+                {grade.label}
+              </option>
+            ))}
           </select>
         </div>
 
@@ -62,22 +72,6 @@ export function PracticeControls({
             <option value="classical">🎻 Classical</option>
             <option value="jazz">🎷 Jazz</option>
             <option value="chorale">⛪ Bach Chorale</option>
-          </select>
-        </div>
-
-        {/* Time Signature */}
-        <div className="flex flex-col gap-1.5">
-          <label htmlFor="timeSignature" className="text-sm font-medium text-gray-600">
-            Time Signature
-          </label>
-          <select
-            id="timeSignature"
-            name="timeSignature"
-            defaultValue={defaultTimeSignature}
-            className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent transition"
-          >
-            <option value="4/4">4/4 — Common time</option>
-            <option value="3/4">3/4 — Waltz time</option>
           </select>
         </div>
 
@@ -101,22 +95,6 @@ export function PracticeControls({
               {defaultTempo}
             </span>
           </div>
-        </div>
-
-        {/* Measures */}
-        <div className="flex flex-col gap-1.5">
-          <label htmlFor="measures" className="text-sm font-medium text-gray-600">
-            Length
-          </label>
-          <select
-            id="measures"
-            name="measures"
-            defaultValue={defaultMeasures}
-            className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent transition"
-          >
-            <option value={4}>4 measures</option>
-            <option value={8}>8 measures</option>
-          </select>
         </div>
       </div>
 

@@ -1,213 +1,208 @@
-import OpenAI from "openai";
-import type { Piece, PracticeSettings } from "./music-types";
+import type { Piece, PracticeSettings, AbrsmGrade } from "./music-types";
 import { validateAndConvertDSL } from "./dsl-parser";
 import { buildMusicXml } from "./musicxml-builder";
 
-function debugTime(label: string, startTime?: number): number {
-  const now = performance.now();
-  if (startTime !== undefined) {
-    const elapsed = now - startTime;
-    console.debug(`[TIMING] ${label}: ${elapsed.toFixed(2)}ms`);
-  }
-  return now;
+// ============================================================
+// ABRSM Sight-Reading Music Generator
+// Based on ABRSM 2025-2026 Piano syllabus
+// ============================================================
+
+// True random for variability
+function random(): number {
+  return Math.random();
 }
 
-function getOpenAIClient(): OpenAI {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) {
-    throw new Error("OPENAI_API_KEY environment variable is not set");
-  }
-  return new OpenAI({ 
-    apiKey,
-    baseURL: process.env.OPENAI_BASE_URL || "https://api.openai.com/v1",
-  });
+function randomInt(max: number): number {
+  return Math.floor(random() * max);
 }
 
-function buildPrompt(settings: PracticeSettings): string {
-  const { difficulty, style, tempo, measures } = settings;
-  const timeSignature = settings.timeSignature;
-  const beats = timeSignature.split("/")[0];
-  const beatType = timeSignature.split("/")[1];
+// Scale degrees and their intervals
+const SCALES = {
+  major: [0, 2, 4, 5, 7, 9, 11],
+  minor: [0, 2, 3, 5, 7, 8, 10],
+};
 
-  const totalDivisions = parseInt(beats) * 4 * (4 / parseInt(beatType));
+// Note names for pitch conversion
+const NOTE_NAMES = ["C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B"];
 
-  const difficultyInstructions: Record<string, string> = {
-    beginner: `
-DIFFICULTY: BEGINNER
-- Key: C major or G major only (no sharps/flats)
-- RH: simple melody, stepwise motion only (no leaps)
-- LH: block chords on beats 1 and 3 (I, IV, V)
-- Note lengths: quarter (q) and half (h) notes only
-- No ornaments, no ties, no slurs
-- 4 measures only
-- Tempo: ${tempo} BPM`,
-    intermediate: `
-DIFFICULTY: INTERMEDIATE
-- Key: up to 3 sharps or flats
-- RH: melody with some leaps (3rds, 5ths)
-- LH: Alberti bass or broken chords
-- Note lengths: include eighth (e) notes
-- Add 1-2 trill ornaments
-- Include dynamics: (mf), (f), (p)
-- 4 measures`,
-    advanced: `
-DIFFICULTY: ADVANCED
-- Key: any key
-- RH: expressive melody with chromaticism
-- LH: independent accompaniment patterns
-- Note lengths: sixteenth (s) notes OK
-- Add ornaments: (trill), (mordent)
-- Add ties: C4:q(tie-start) ... C4:q(tie-stop)
-- 4-8 measures`,
+// ABRSM Grade Parameters
+interface GradeParams {
+  measures: number;
+  timeSignature: string;
+  keys: { major: string[]; minor: string[] };
+}
+
+const GRADE_PARAMS: Record<AbrsmGrade, GradeParams> = {
+  initial: { measures: 4, timeSignature: "4/4", keys: { major: ["C"], minor: ["D"] } },
+  grade1: { measures: 4, timeSignature: "4/4", keys: { major: ["G", "F"], minor: ["A"] } },
+  grade2: { measures: 4, timeSignature: "4/4", keys: { major: ["D"], minor: ["E", "G"] } },
+  grade3: { measures: 8, timeSignature: "3/8", keys: { major: ["A", "Bb", "E"], minor: ["B"] } },
+  grade4: { measures: 8, timeSignature: "6/8", keys: { major: ["C", "G", "F"], minor: ["D", "A", "E"] } },
+  grade5: { measures: 8, timeSignature: "4/4", keys: { major: ["E", "A"], minor: ["F#", "C"] } },
+  grade6: { measures: 8, timeSignature: "4/4", keys: { major: ["C", "F"], minor: ["C#", "F#"] } },
+  grade7: { measures: 8, timeSignature: "4/4", keys: { major: ["G", "D", "A"], minor: ["E", "B", "F#"] } },
+  grade8: { measures: 8, timeSignature: "4/4", keys: { major: ["G", "D"], minor: ["E", "B"] } },
+};
+
+function getKeyIndex(key: string): number {
+  const keyMap: Record<string, number> = {
+    "C": 0, "D": 2, "E": 4, "F": 5, "G": 7, "A": 9, "B": 11,
+    "C#": 0, "D#": 2, "F#": 6, "G#": 8, "A#": 10,
+    "Db": 1, "Eb": 3, "Gb": 6, "Ab": 8, "Bb": 10,
   };
-
-  const styleInstructions: Record<string, string> = {
-    classical: `
-STYLE: Classical
-- Functional harmony: I - IV - V - I in each phrase
-- End with authentic cadence (V - I)
-- Balanced 4-bar phrases`,
-    jazz: `
-STYLE: Jazz
-- ii-V-I progressions
-- Left hand: 7th chords
-- Syncopated rhythms in RH
-- Blue notes allowed`,
-    chorale: `
-STYLE: Chorale (Bach-style)
-- Four-voice texture
-- Strict voice leading
-- Use passing tones
-- No parallel 5ths/octaves`,
-  };
-
-  return `You are a professional composer. Generate piano music using this DSL:
-
-## DSL FORMAT:
-
-META key=<key> mode=<major|minor> time=<beats>/<beat> tempo=<bpm>
-
-M<n>
-RH: <voice content>
-LH: <voice content>
-
-## EXAMPLES BY DIFFICULTY:
-
-BEGINNER EXAMPLE (simple block chords):
-META key=C mode=major time=4/4 tempo=80
-M1
-RH: C4:q E4:q G4:q E4:q
-LH: [C3,E3,G3]:h [G3,B3,D4]:h
-
-INTERMEDIATE EXAMPLE (with eighth notes and ornaments):
-META key=G mode=major time=4/4 tempo=90
-M1
-RH: E4:e E4:e G4:e G4:e A4:e A4:e G4:e G4:e
-LH: [G3,B3,D4]:q [C4,E4,G4]:q [D4,F#4,A4]:q [G3,B3,D4]:q
-
-ADVANCED EXAMPLE (complex rhythms and chromaticism):
-META key=F mode=minor time=4/4 tempo=100
-M1
-RH: Ab4:e Bb4:e C5:e Db5:e C5:e Bb4:e Ab4:e G4:e
-LH: [F3b,A3b,C4]:q (tie-start) [F3b,A3b,C4]:q (tie-stop) [Db3,F3b,Ab3]:q [G3b,B3b,D4]:q
-
-## CHORD FORMAT:
-
-## MODIFIERS (after duration):
-- (trill), (mordent), (turn)
-- (accent), (staccato), (tenuto)
-- (tie-start), (tie-stop)
-- (slur-start), (slur-stop)
-- (mf), (f), (p), (pp)
-
-## RULES:
-- ${measures} measures
-- Time: ${timeSignature} (= ${totalDivisions} divisions per measure)
-- RH range: C4 to C6
-- LH range: C2 to C4
-- Each measure RH and LH must total ${totalDivisions} divisions exactly
-- Must use functional harmony (I, IV, V, ii, vi, iii, vii°)
-- End with cadence (V→I or ii→V→I)
-
-${difficultyInstructions[difficulty]}
-${styleInstructions[style]}
-
-OUTPUT ONLY THE DSL - no explanations, no JSON, no markdown.`;
-
+  return keyMap[key] ?? 0;
 }
 
-const MAX_RETRIES = 3;
+function noteToPitch(root: number, semitone: number, octave: number): string {
+  const adjustedNote = ((root + semitone) % 12 + 12) % 12;
+  const noteOctave = octave + Math.floor((root + semitone) / 12);
+  return `${NOTE_NAMES[adjustedNote]}${noteOctave}`;
+}
 
-export async function generateMusicPiece(settings: PracticeSettings): Promise<{
-  piece: Piece;
-  musicXml: string;
-}> {
-  const overallStart = debugTime("generateMusicPiece:start");
-  const client = getOpenAIClient();
+function getChordNotes(key: string, mode: "major" | "minor", chordSymbol: string, octave: number): string[] {
+  const keyIndex = getKeyIndex(key);
+  const scaleIntervals = SCALES[mode];
+  const degreeMap: Record<string, number> = { "I": 0, "ii": 1, "iii": 2, "IV": 3, "V": 4, "vi": 5, "vii": 6 };
+  const degreeIndex = degreeMap[chordSymbol] ?? 0;
+  const rootSemitone = scaleIntervals[degreeIndex];
+  const intervals = (chordSymbol === "ii" || chordSymbol === "iii" || chordSymbol === "vi") ? [0, 3, 7] : [0, 4, 7];
+  return intervals.map((interval) => noteToPitch(keyIndex, rootSemitone + interval, octave));
+}
+
+// Random melody templates
+const MELODY_TEMPLATES = [
+  { degrees: [0, 2, 4, 2] },
+  { degrees: [0, 4, 7, 4] },
+  { degrees: [0, 1, 2, 1] },
+  { degrees: [0, 4, 2, 4] },
+  { degrees: [2, 4, 5, 4] },
+  { degrees: [0, 5, 4, 2] },
+  { degrees: [0, 1, 0, 2] },
+  { degrees: [4, 2, 0, 2] },
+  { degrees: [0, 2, 4, 5] },
+  { degrees: [0, 1, 2, 4] },
+];
+
+// LH pattern types
+const LH_PATTERNS = ["chord", "arpeggio", "broken", "alternating", "octave", "quint"];
+
+function generateMelodyForGrade(grade: AbrsmGrade, key: string, mode: "major" | "minor"): string {
+  const scaleIntervals = SCALES[mode];
+  const keyIndex = getKeyIndex(key);
+  const notes: string[] = [];
+  const template = MELODY_TEMPLATES[randomInt(MELODY_TEMPLATES.length)];
+  const baseOctave = 4 + randomInt(2);
   
-  const promptStart = debugTime("buildPrompt:start");
-  const prompt = buildPrompt(settings);
-  debugTime("buildPrompt:done", promptStart);
-
-  let lastErrors: string[] = [];
-
-  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-    const attemptStart = debugTime(`Attempt ${attempt}:start`);
-    try {
-      const llmStart = debugTime(`Attempt ${attempt}:LLM call start`);
-      const response = await client.chat.completions.create({
-        model: "openai/gpt-4o-mini",
-        messages: [
-          {
-            role: "system",
-            content: "You output ONLY the DSL music format. No JSON, no prose, no markdown code blocks. Only raw DSL.",
-          },
-          {
-            role: "user",
-            content: attempt === 1
-              ? prompt
-              : `${prompt}\n\nPrevious attempt failed validation:\n${lastErrors.join("\n")}\n\nFix these issues and return valid DSL.`,
-          },
-        ],
-        temperature: 0.1
-      });
-      debugTime(`Attempt ${attempt}:LLM call done`, llmStart);
-
-      const rawText = response.choices[0]?.message?.content?.trim() ?? "";
-
-      if (!rawText) {
-        lastErrors = ["Empty response from LLM"];
-        continue;
-      }
-      
-      const cleanDsl = rawText
-      .replace(/^```dsl\n?/g, "")
-      .replace(/^```\n?$/g, "")
-      .replace(/^```music\n?/g, "")
-      .trim();
-      
-      const parseStart = debugTime(`Attempt ${attempt}:DSL parse start`);
-      const result = validateAndConvertDSL(cleanDsl);
-      debugTime(`Attempt ${attempt}:DSL parse done`, parseStart);
-
-      if (result.valid) {
-        const xmlStart = debugTime(`Attempt ${attempt}:MusicXML build start`);
-        const musicXml = buildMusicXml(result.piece);
-        debugTime(`Attempt ${attempt}:MusicXML build done`, xmlStart);
-        debugTime(`Attempt ${attempt}:complete`, attemptStart);
-        debugTime("generateMusicPiece:complete", overallStart);
-        return { piece: result.piece, musicXml };
-      } else {
-        lastErrors = result.errors;
-        console.warn(`Attempt ${attempt} validation failed:`, result.errors);
-      }
-    } catch (error) {
-      lastErrors = [error instanceof Error ? error.message : String(error)];
-      console.error(`Attempt ${attempt} LLM call failed:`, error);
+  if (grade === "initial" || grade === "grade1" || grade === "grade2") {
+    for (let i = 0; i < 4; i++) {
+      const semitone = scaleIntervals[template.degrees[i] % 7];
+      notes.push(`${noteToPitch(keyIndex, semitone, baseOctave)}:q`);
+    }
+  } else if (grade === "grade3") {
+    for (let i = 0; i < 3; i++) {
+      const semitone = scaleIntervals[template.degrees[i % 4] % 7];
+      notes.push(`${noteToPitch(keyIndex, semitone, baseOctave)}:e`);
+    }
+  } else if (grade === "grade4") {
+    for (let i = 0; i < 6; i++) {
+      const semitone = scaleIntervals[template.degrees[i % 4] % 7];
+      notes.push(`${noteToPitch(keyIndex, semitone, baseOctave)}:e`);
+    }
+  } else {
+    for (let i = 0; i < 4; i++) {
+      const semitone = scaleIntervals[template.degrees[i] % 7];
+      notes.push(`${noteToPitch(keyIndex, semitone, baseOctave)}:q`);
     }
   }
+  return notes.join(" ");
+}
 
-  throw new Error(
-    `Failed to generate valid music after ${MAX_RETRIES} attempts. Last errors: ${lastErrors.join("; ")}`
-  );
+function generateLeftHandForGrade(grade: AbrsmGrade, key: string, mode: "major" | "minor", chords: string[]): string {
+  const keyIndex = getKeyIndex(key);
+  const result: string[] = [];
+  const lhPattern = LH_PATTERNS[randomInt(LH_PATTERNS.length)];
+  
+  if (grade === "grade3") {
+    for (let i = 0; i < 3; i++) {
+      const notes = getChordNotes(key, mode, chords[i % chords.length], 3);
+      result.push(`[${notes.join(",")}]:e`);
+    }
+  } else if (grade === "grade4") {
+    if (lhPattern === "broken") {
+      const notes = getChordNotes(key, mode, chords[0], 3);
+      const bp = [notes[0], notes[2], notes[1], notes[2], notes[0], notes[2]];
+      for (const n of bp) result.push(`${n}:e`);
+      return result.join(" ");
+    }
+    for (let i = 0; i < 6; i++) {
+      const notes = getChordNotes(key, mode, chords[i % chords.length], 3);
+      result.push(`[${notes.join(",")}]:e`);
+    }
+  } else {
+    if (lhPattern === "arpeggio") {
+      const notes = getChordNotes(key, mode, chords[0], 3);
+      const bassNotes = notes.map((n) => n.replace(/[0-9]/g, '') + "3");
+      const pat = [bassNotes[0], bassNotes[2], bassNotes[1], bassNotes[2]];
+      for (const n of pat) result.push(`${n}:q`);
+    } else if (lhPattern === "alternating") {
+      const notes = getChordNotes(key, mode, chords[0], 3);
+      const bassNotes = notes.map((n) => n.replace(/[0-9]/g, '') + "3");
+      const pat = [bassNotes[0], bassNotes[1], bassNotes[0], bassNotes[1]];
+      for (const n of pat) result.push(`${n}:q`);
+    } else if (lhPattern === "octave") {
+      for (const chord of chords) {
+        const notes = getChordNotes(key, mode, chord, 3);
+        const root = notes[0].replace(/[0-9]/g, '');
+        result.push(`[${root}3,${root}4]:q`);
+      }
+    } else if (lhPattern === "quint") {
+      for (const chord of chords) {
+        const notes = getChordNotes(key, mode, chord, 3);
+        const root = notes[0].replace(/[0-9]/g, '');
+        const fifth = notes[2].replace(/[0-9]/g, '');
+        result.push(`[${root}3,${fifth}3]:q`);
+      }
+    } else {
+      for (const chord of chords) {
+        const notes = getChordNotes(key, mode, chord, 3);
+        const bassNotes = notes.map((n, i) => {
+          const oct = parseInt(n.match(/[0-9]+/)?.[0] || "4");
+          if (oct >= 5 && i > 0) return n.replace(/[0-9]+/, "4");
+          return n;
+        });
+        result.push(`[${bassNotes.join(",")}]:q`);
+      }
+    }
+  }
+  return result.join(" ");
+}
+
+function getChordsForMeasure(style: string, measureIndex: number): string[] {
+  const progressions: Record<string, string[][]> = {
+    classical: [["I", "IV", "V", "I"], ["I", "ii", "IV", "V"], ["I", "IV", "ii", "V"], ["I", "V", "IV", "I"], ["IV", "V", "I", "IV"]],
+    jazz: [["ii7", "V7", "I", "ii7"], ["ii7", "V7", "I", "V7"], ["IV7", "V7", "I", "IV7"], ["ii7", "IV7", "V7", "I"]],
+    chorale: [["I", "IV", "I", "V"], ["I", "IV", "V", "I"], ["I", "IV", "I", "IV"], ["IV", "V", "I", "I"]],
+  };
+  return (progressions[style] || progressions.classical)[measureIndex % (progressions[style]?.length || 4)];
+}
+
+export function generateMusicPiece(settings: PracticeSettings): { piece: Piece; musicXml: string } {
+  const { grade, style, tempo } = settings;
+  const params = GRADE_PARAMS[grade];
+  const mode: "major" | "minor" = "major";
+  
+  let dsl = `META key=C mode=${mode} time=${params.timeSignature} tempo=${tempo}\n\n`;
+  
+  for (let m = 1; m <= params.measures; m++) {
+    dsl += `M${m}\n`;
+    const key = params.keys.major[m - 1 % params.keys.major.length];
+    const chords = getChordsForMeasure(style, m - 1);
+    dsl += `RH: ${generateMelodyForGrade(grade, key, mode)}\n`;
+    dsl += `LH: ${generateLeftHandForGrade(grade, key, mode, chords)}\n\n`;
+  }
+  
+  const result = validateAndConvertDSL(dsl);
+  if (!result.valid) throw new Error(`Generation failed: ${result.errors.join(", ")}`);
+  
+  return { piece: result.piece, musicXml: buildMusicXml(result.piece) };
 }

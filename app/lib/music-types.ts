@@ -29,19 +29,26 @@ export type Piece = {
 };
 
 // ============================================================
-// Difficulty Settings
+// ABRSM Grade Settings (based on 2025-2026 Piano syllabus)
 // ============================================================
 
-export type DifficultyLevel = "beginner" | "intermediate" | "advanced";
+export type AbrsmGrade = 
+  | "initial"  // 4 bars, 4/4 or 2/4, C major/D minor, 5-finger position
+  | "grade1"    // 4 bars, 3/4 or 4/4, G/F majors, A minor, 5-finger position
+  | "grade2"    // 4 bars, D major, E/G minors, hands together
+  | "grade3"    // up to 8 bars, 3/8, A/Bb/E majors, B minor, outside 5-finger
+  | "grade4"    // c. 8 bars, 6/8, anacrusis, chromatic notes
+  | "grade5"    // c. 8-12 bars, E/A majors, F#/C minors, syncopation
+  | "grade6"    // c. 12-16 bars, 9/8, 5/8, 5/4, triplet rhythms
+  | "grade7"    // c. 16-20 bars, 7/8, 7/4, tempo changes, 8va
+  | "grade8";   // c. 1 page, 12/8, B/Db majors, ornaments, acceleration
 
 export type MusicStyle = "classical" | "jazz" | "chorale";
 
 export type PracticeSettings = {
-  difficulty: DifficultyLevel;
+  grade: AbrsmGrade;
   style: MusicStyle;
   tempo: number;
-  measures: number; // 4 or 8
-  timeSignature: "4/4" | "3/4";
 };
 
 // ============================================================

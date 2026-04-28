@@ -1,7 +1,7 @@
 import { Form, useActionData, useNavigation } from "react-router";
 import type { Route } from "./+types/practice";
 import { generateMusicPiece } from "~/lib/music-generator";
-import type { DifficultyLevel, MusicStyle, PracticeSettings } from "~/lib/music-types";
+import type { AbrsmGrade, MusicStyle, PracticeSettings } from "~/lib/music-types";
 import { SheetMusicViewer } from "~/components/SheetMusicViewer";
 import { PracticeControls } from "~/components/PracticeControls";
 
@@ -47,19 +47,14 @@ export async function action({ request }: Route.ActionArgs) {
   const formData = await request.formData();
   debugTime("action:formData parse done", formDataStart);
 
-  const difficulty = (formData.get("difficulty") as DifficultyLevel) ?? "beginner";
+  const grade = (formData.get("difficulty") as AbrsmGrade) ?? "grade1";
   const style = (formData.get("style") as MusicStyle) ?? "classical";
   const tempo = parseInt((formData.get("tempo") as string) ?? "80", 10);
-  const measures = parseInt((formData.get("measures") as string) ?? "4", 10);
-  const timeSignatureRaw = (formData.get("timeSignature") as string) ?? "4/4";
-  const timeSignature: "4/4" | "3/4" = timeSignatureRaw === "3/4" ? "3/4" : "4/4";
 
   const settings: PracticeSettings = {
-    difficulty,
+    grade,
     style,
     tempo: isNaN(tempo) ? 80 : Math.max(40, Math.min(200, tempo)),
-    measures: isNaN(measures) ? 4 : Math.max(4, Math.min(8, measures)),
-    timeSignature,
   };
 
   try {
