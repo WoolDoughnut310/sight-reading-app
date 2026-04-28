@@ -7,25 +7,16 @@ import { buildMusicXml } from "./musicxml-builder";
 // Based on ABRSM 2025-2026 Piano syllabus
 // ============================================================
 
-// True random for variability
-function random(): number {
-  return Math.random();
-}
+function random(): number { return Math.random(); }
+function randomInt(max: number): number { return Math.floor(random() * max); }
 
-function randomInt(max: number): number {
-  return Math.floor(random() * max);
-}
-
-// Scale degrees and their intervals
 const SCALES = {
   major: [0, 2, 4, 5, 7, 9, 11],
   minor: [0, 2, 3, 5, 7, 8, 10],
 };
 
-// Note names for pitch conversion
 const NOTE_NAMES = ["C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B"];
 
-// ABRSM Grade Parameters
 interface GradeParams {
   measures: number;
   timeSignature: string;
@@ -69,56 +60,143 @@ function getChordNotes(key: string, mode: "major" | "minor", chordSymbol: string
   return intervals.map((interval) => noteToPitch(keyIndex, rootSemitone + interval, octave));
 }
 
-// Random melody templates
 const MELODY_TEMPLATES = [
-  { degrees: [0, 2, 4, 2] },
-  { degrees: [0, 4, 7, 4] },
-  { degrees: [0, 1, 2, 1] },
-  { degrees: [0, 4, 2, 4] },
-  { degrees: [2, 4, 5, 4] },
-  { degrees: [0, 5, 4, 2] },
-  { degrees: [0, 1, 0, 2] },
-  { degrees: [4, 2, 0, 2] },
-  { degrees: [0, 2, 4, 5] },
-  { degrees: [0, 1, 2, 4] },
+  { degrees: [0, 2, 4, 2] }, { degrees: [0, 4, 7, 4] }, { degrees: [0, 1, 2, 1] },
+  { degrees: [0, 4, 2, 4] }, { degrees: [2, 4, 5, 4] }, { degrees: [0, 5, 4, 2] },
+  { degrees: [0, 1, 0, 2] }, { degrees: [4, 2, 0, 2] }, { degrees: [0, 2, 4, 5] }, { degrees: [0, 1, 2, 4] },
 ];
 
-// LH pattern types
 const LH_PATTERNS = ["chord", "arpeggio", "broken", "alternating", "octave", "quint"];
 
-function generateMelodyForGrade(grade: AbrsmGrade, key: string, mode: "major" | "minor"): string {
-  const scaleIntervals = SCALES[mode];
-  const keyIndex = getKeyIndex(key);
+// Grade 4: Anacrusis (pickup notes at start)
+function generateAnacrusis(baseOctave: number, keyIndex: number, scaleIntervals: number[]): string {
+  const pickupNotes = randomInt(2) + 1;
+  const notes: string[] = [];
+  for (let i = 0; i < pickupNotes; i++) {
+    const degree = [0, 1, 2][randomInt(3)];
+    const semitone = scaleIntervals[degree % 7];
+    notes.push(`${noteToPitch(keyIndex, semitone, baseOctave)}:e`);
+  }
+  return notes.join(" ");
+}
+
+// Grade 5: Syncopation patterns
+function generateSyncopation(baseOctave: number, keyIndex: number, scaleIntervals: number[]): string {
+  const patterns = [
+    ["e", "q", "e", "e"],
+    ["e.", "e", "q", "q"],
+    ["q", "e", "e", "q"],
+    ["e", "e", "q.", "e"],
+  ];
+  const pattern = patterns[randomInt(patterns.length)];
   const notes: string[] = [];
   const template = MELODY_TEMPLATES[randomInt(MELODY_TEMPLATES.length)];
-  const baseOctave = 4 + randomInt(2);
+  for (let i = 0; i < 4; i++) {
+    const semitone = scaleIntervals[template.degrees[i % 4] % 7];
+    notes.push(`${noteToPitch(keyIndex, semitone, baseOctave)}:${pattern[i]}`);
+  }
+  return notes.join(" ");
+}
+
+// Grade 6: Triplets
+function generateTripletPattern(baseOctave: number, keyIndex: number, scaleIntervals: number[]): string {
+  const hasTriplet = random() > 0.5;
+  if (hasTriplet) {
+    return `${noteToPitch(keyIndex, scaleIntervals[0], baseOctave)}:e.t ${noteToPitch(keyIndex, scaleIntervals[2], baseOctave)}:t ${noteToPitch(keyIndex, scaleIntervals[4], baseOctave)}:t ${noteToPitch(keyIndex, scaleIntervals[2], baseOctave)}:q`;
+  }
+  const notes: string[] = [];
+  const template = MELODY_TEMPLATES[randomInt(MELODY_TEMPLATES.length)];
+  for (let i = 0; i < 4; i++) {
+    const semitone = scaleIntervals[template.degrees[i % 4] % 7];
+    notes.push(`${noteToPitch(keyIndex, semitone, baseOctave)}:q`);
+  }
+  return notes.join(" ");
+}
+
+// Grade 8: Ornaments (trills, mordents, turns)
+function generateOrnamentedMelody(baseOctave: number, keyIndex: number, scaleIntervals: number[]): string {
+  const notes: string[] = [];
+  const template = MELODY_TEMPLATES[randomInt(MELODY_TEMPLATES.length)];
   
-  if (grade === "initial" || grade === "grade1" || grade === "grade2") {
-    for (let i = 0; i < 4; i++) {
-      const semitone = scaleIntervals[template.degrees[i] % 7];
-      notes.push(`${noteToPitch(keyIndex, semitone, baseOctave)}:q`);
-    }
-  } else if (grade === "grade3") {
-    for (let i = 0; i < 3; i++) {
-      const semitone = scaleIntervals[template.degrees[i % 4] % 7];
-      notes.push(`${noteToPitch(keyIndex, semitone, baseOctave)}:e`);
-    }
-  } else if (grade === "grade4") {
-    for (let i = 0; i < 6; i++) {
-      const semitone = scaleIntervals[template.degrees[i % 4] % 7];
-      notes.push(`${noteToPitch(keyIndex, semitone, baseOctave)}:e`);
-    }
-  } else {
-    for (let i = 0; i < 4; i++) {
-      const semitone = scaleIntervals[template.degrees[i] % 7];
-      notes.push(`${noteToPitch(keyIndex, semitone, baseOctave)}:q`);
+  for (let i = 0; i < 4; i++) {
+    const semitone = scaleIntervals[template.degrees[i % 4] % 7];
+    const pitch = noteToPitch(keyIndex, semitone, baseOctave);
+    
+    if (random() > 0.7 && (i === 0 || i === 2)) {
+      const ornaments = ["trill", "mord", "turn"];
+      const ornament = ornaments[randomInt(3)];
+      notes.push(`(${ornament})${pitch}:q`);
+    } else {
+      notes.push(`${pitch}:q`);
     }
   }
   return notes.join(" ");
 }
 
-function generateLeftHandForGrade(grade: AbrsmGrade, key: string, mode: "major" | "minor", chords: string[]): string {
+// Grade 7: Tempo changes
+function getModifiedTempo(baseTempo: number, measureIndex: number): number {
+  if (measureIndex === 0) return baseTempo;
+  if (measureIndex >= 6) {
+    const changes = [-10, -15, 10, 15, 0];
+    return baseTempo + changes[randomInt(changes.length)];
+  }
+  return baseTempo;
+}
+
+function generateMelodyForGrade(grade: AbrsmGrade, key: string, mode: "major" | "minor", measureIndex: number): string {
+  const scaleIntervals = SCALES[mode];
   const keyIndex = getKeyIndex(key);
+  const baseOctave = 4 + randomInt(2);
+  
+  // Grade 4: 6/8 with anacrusis
+  if (grade === "grade4") {
+    if (measureIndex === 0 && random() > 0.5) {
+      return generateAnacrusis(baseOctave, keyIndex, scaleIntervals) + " " + generateAnacrusis(baseOctave, keyIndex, scaleIntervals);
+    }
+    const notes: string[] = [];
+    for (let i = 0; i < 6; i++) {
+      const semitone = scaleIntervals[randomInt(7)];
+      notes.push(`${noteToPitch(keyIndex, semitone, baseOctave)}:e`);
+    }
+    return notes.join(" ");
+  }
+  
+  // Grade 5: Syncopation
+  if (grade === "grade5") {
+    return generateSyncopation(baseOctave, keyIndex, scaleIntervals);
+  }
+  
+  // Grade 6: Triplets
+  if (grade === "grade6") {
+    return generateTripletPattern(baseOctave, keyIndex, scaleIntervals);
+  }
+  
+  // Grade 8: Ornaments
+  if (grade === "grade8") {
+    return generateOrnamentedMelody(baseOctave, keyIndex, scaleIntervals);
+  }
+  
+  // Grade 3: 3/8 time
+  if (grade === "grade3") {
+    const notes: string[] = [];
+    for (let i = 0; i < 3; i++) {
+      const semitone = scaleIntervals[randomInt(7)];
+      notes.push(`${noteToPitch(keyIndex, semitone, baseOctave)}:e`);
+    }
+    return notes.join(" ");
+  }
+  
+  // Default: simple patterns
+  const template = MELODY_TEMPLATES[randomInt(MELODY_TEMPLATES.length)];
+  const notes: string[] = [];
+  for (let i = 0; i < 4; i++) {
+    const semitone = scaleIntervals[template.degrees[i % 4] % 7];
+    notes.push(`${noteToPitch(keyIndex, semitone, baseOctave)}:q`);
+  }
+  return notes.join(" ");
+}
+
+function generateLeftHandForGrade(grade: AbrsmGrade, key: string, mode: "major" | "minor", chords: string[]): string {
   const result: string[] = [];
   const lhPattern = LH_PATTERNS[randomInt(LH_PATTERNS.length)];
   
@@ -191,13 +269,23 @@ export function generateMusicPiece(settings: PracticeSettings): { piece: Piece; 
   const params = GRADE_PARAMS[grade];
   const mode: "major" | "minor" = "major";
   
-  let dsl = `META key=C mode=${mode} time=${params.timeSignature} tempo=${tempo}\n\n`;
+  // Grade 7 tempo changes at end
+  const effectiveTempo = grade === "grade7" ? getModifiedTempo(tempo, 7) : tempo;
+  
+  let dsl = `META key=C mode=${mode} time=${params.timeSignature} tempo=${effectiveTempo}\n\n`;
   
   for (let m = 1; m <= params.measures; m++) {
     dsl += `M${m}\n`;
-    const key = params.keys.major[m - 1 % params.keys.major.length];
+    const key = params.keys.major[(m - 1) % params.keys.major.length];
     const chords = getChordsForMeasure(style, m - 1);
-    dsl += `RH: ${generateMelodyForGrade(grade, key, mode)}\n`;
+    
+    // Grade 7: vary tempo per measure
+    const measureTempo = grade === "grade7" ? getModifiedTempo(tempo, m - 1) : effectiveTempo;
+    if (grade === "grade7" && m > 1) {
+      dsl = dsl.replace(/tempo=\d+/, `tempo=${measureTempo}`);
+    }
+    
+    dsl += `RH: ${generateMelodyForGrade(grade, key, mode, m - 1)}\n`;
     dsl += `LH: ${generateLeftHandForGrade(grade, key, mode, chords)}\n\n`;
   }
   
