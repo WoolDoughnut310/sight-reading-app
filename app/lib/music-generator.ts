@@ -83,16 +83,6 @@ STYLE: Chorale (Bach-style)
 
   return `You are a professional composer. Generate piano music using this DSL:
 
-META key=G mode=major time=4/4 tempo=80
-
-M1
-RH: C4:q D4:q E4:q F4:q
-LH: [C3,E3,G3]:h [F3,A3,C4]:h
-
-M2
-RH: E4:q G4:q C5:q D5:q
-LH: [A3,C4,E4]:h [G3,B3,D4]:h
-
 ## DSL FORMAT:
 
 META key=<key> mode=<major|minor> time=<beats>/<beat> tempo=<bpm>
@@ -101,16 +91,27 @@ M<n>
 RH: <voice content>
 LH: <voice content>
 
-## NOTES:
-- Pitch: C4, F#3, Bb2 (letter + optional #/b + octave)
-- Rest: R:q
-- Durations: w=whole(16 divisions), h=half(8 divisions), q=quarter(4 divisions), e=eighth(2 divisions), s=sixteenth(1 divisions)
-- Dotted (adds half the base): w.=24 divisions, h.=12 divisions, q.=6 divisions, e.=3 divisions, s.=1.5 divisions
-- In ${timeSignature} each measure must total exactly ${totalDivisions} divisions. Double-check your math before outputting.
-- EXAMPLE CHECK: C4:q D4:q E4:q F4:q = 4+4+4+4 = 16 divisions ✓
+## EXAMPLES BY DIFFICULTY:
 
-## CHORDS:
-[C4,E4,G4]:q
+BEGINNER EXAMPLE (simple block chords):
+META key=C mode=major time=4/4 tempo=80
+M1
+RH: C4:q E4:q G4:q E4:q
+LH: [C3,E3,G3]:h [G3,B3,D4]:h
+
+INTERMEDIATE EXAMPLE (with eighth notes and ornaments):
+META key=G mode=major time=4/4 tempo=90
+M1
+RH: E4:e E4:e G4:e G4:e A4:e A4:e G4:e G4:e
+LH: [G3,B3,D4]:q [C4,E4,G4]:q [D4,F#4,A4]:q [G3,B3,D4]:q
+
+ADVANCED EXAMPLE (complex rhythms and chromaticism):
+META key=F mode=minor time=4/4 tempo=100
+M1
+RH: Ab4:e Bb4:e C5:e Db5:e C5:e Bb4:e Ab4:e G4:e
+LH: [F3b,A3b,C4]:q (tie-start) [F3b,A3b,C4]:q (tie-stop) [Db3,F3b,Ab3]:q [G3b,B3b,D4]:q
+
+## CHORD FORMAT:
 
 ## MODIFIERS (after duration):
 - (trill), (mordent), (turn)
