@@ -80,10 +80,24 @@ function parseModifiers(modStr: string): string[] {
   return matches.map(m => m.slice(1, -1));
 }
 
-function parseNote(noteStr: string): ParsedNote {
+function parseNote(noteStr: string, defaultDuration?: number): ParsedNote {
   const colonIdx = noteStr.lastIndexOf(":");
   if (colonIdx === -1) {
-    return { pitch: "C4", duration: 4, modifiers: [], isRest: false };
+    // No duration specified, use default or fallback
+    const { step, alter, octave, isRest } = parsePitch(noteStr);
+    let actualPitch = "";
+    if (isRest) {
+      actualPitch = "R";
+    } else {
+      const altStr = alter === 1 ? "#" : alter === -1 ? "b" : "";
+      actualPitch = `${step}${altStr}${octave}`;
+    }
+    return {
+      pitch: actualPitch,
+      duration: defaultDuration ?? 4,
+      modifiers: [],
+      isRest,
+    };
   }
 
   const pitchPart = noteStr.slice(0, colonIdx);
@@ -158,7 +172,7 @@ function parseVoice(voiceStr: string, allowChords: boolean): (ParsedNote | Parse
       const { duration } = parseDuration(cm.duration);
       const modifiers = parseModifiers(cm.content);
       results.push({
-        notes: chordNotes.map(n => parseNote(n)),
+        notes: chordNotes.map(n => parseNote(n, duration)),
         duration,
         modifiers,
       });
